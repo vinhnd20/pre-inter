@@ -55,7 +55,7 @@ check "Swap disabled (none active)" "[ -z \"\$(swapon --noheadings)\" ] && echo 
 check "Module overlay loaded/built-in" \
   "{ lsmod | grep -qw overlay || test -d /sys/module/overlay; } && echo ok" "ok"
 check "Module br_netfilter loaded/built-in" \
-  "{ lsmod | grep -qw br_netfilter || test -d /sys/module/br_netfilter; } && echo ok" "ok"
+  "{ lsmod | grep -qw br_netfilter || test -d /sys/module/br_netfilter || test -e /proc/sys/net/bridge/bridge-nf-call-iptables; } && echo ok" "ok"
 check "sysctl net.ipv4.ip_forward = 1" \
   "cat /proc/sys/net/ipv4/ip_forward" "1"
 check "sysctl bridge-nf-call-iptables = 1" \
