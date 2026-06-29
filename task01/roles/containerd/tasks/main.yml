@@ -66,9 +66,9 @@
       {{ _containerd_default.stdout
          | regex_replace('SystemdCgroup\s*=\s*\w+',
                          'SystemdCgroup = true' if containerd_systemd_cgroup else 'SystemdCgroup = false')
-         | regex_replace('sandbox_image\s*=\s*["\'][^"\']*["\']',
+         | regex_replace('sandbox_image\s*=\s*\S+',
                          'sandbox_image = "' ~ containerd_pause_image ~ '"')
-         | regex_replace('(\n\s*)sandbox\s*=\s*["\'][^"\']*["\']',
+         | regex_replace('(\n\s*)sandbox\s*=\s*\S+',
                          '\1sandbox = "' ~ containerd_pause_image ~ '"') }}
   notify: Restart containerd
 
