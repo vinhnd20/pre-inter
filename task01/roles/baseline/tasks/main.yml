@@ -1,0 +1,38 @@
+---
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ node_hostname }}"
+
+- name: Configure /etc/hosts
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ node_timezone }}"
+
+- name: Configure DNS via systemd-resolved
+  ansible.builtin.template:
+    src: resolved.conf.j2
+    dest: /etc/systemd/resolved.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart systemd-resolved
+
+- name: Enable time synchronization (systemd-timesyncd)
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    enabled: true
+    state: started
+
+- name: Install common CLI tooling
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600

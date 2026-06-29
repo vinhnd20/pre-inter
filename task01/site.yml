@@ -1,0 +1,19 @@
+---
+# ============================================================================
+# Provision a fresh Ubuntu 24.04 host into a production-ready Kubernetes worker
+# node, ready for `kubeadm join`. Does NOT create a cluster or run join.
+# ============================================================================
+- name: Provision Kubernetes worker node
+  hosts: k8s_nodes
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: preflight      # assert OS/arch; fail fast
+    - role: baseline       # hostname, hosts, DNS, timezone, NTP, CLI tools
+    - role: users          # sysadmin accounts, sudo, random passwords
+    - role: k8s_prereqs    # swap off, kernel modules, sysctl
+    - role: containerd     # runtime + SystemdCgroup + pause image
+    - role: kubernetes     # kubelet, kubeadm, kubectl, crictl (ready to join)
+    - role: hardening      # SSH + selected CIS L1 controls
+    - role: auditd         # capture every user command to dedicated file

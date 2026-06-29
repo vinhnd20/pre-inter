@@ -1,0 +1,6 @@
+---
+# auditd's systemd unit sets RefuseManualStop=yes, so the systemd module
+# cannot restart it. `service auditd restart` is the supported path.
+- name: Restart auditd  # noqa command-instead-of-module
+  ansible.builtin.command: service auditd restart
+  changed_when: false

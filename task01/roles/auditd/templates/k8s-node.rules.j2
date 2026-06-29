@@ -1,0 +1,16 @@
+## Managed by Ansible — capture every command executed by users.
+## Loaded into a dedicated audit log ({{ audit_log_file }}).
+
+# Record all command executions (execve) for real users and root.
+# auid!=unset filters kernel/boot noise; >=1000 = human/login users.
+-a always,exit -F arch=b64 -S execve -F auid>=1000 -F auid!=4294967295 -k user_commands
+-a always,exit -F arch=b32 -S execve -F auid>=1000 -F auid!=4294967295 -k user_commands
+
+# Also capture privileged command execution (root / sudo escalations).
+-a always,exit -F arch=b64 -S execve -F auid=0 -k root_commands
+-a always,exit -F arch=b32 -S execve -F auid=0 -k root_commands
+
+# Enable auditing (mutable so re-runs can reload rules -> idempotent).
+# For strict CIS 4.1.x immutability set audit_immutable=true (requires reboot
+# to change rules thereafter). Keep this directive LAST.
+-e {{ '2' if audit_immutable | default(false) | bool else '1' }}

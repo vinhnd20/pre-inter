@@ -1,0 +1,48 @@
+---
+# Kernel modules persisted via /etc/modules-load.d
+- name: Persist kernel modules to load at boot
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: "{{ kernel_modules | join('\n') + '\n' }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Load kernel modules now
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ kernel_modules }}"
+
+# sysctl: persist to a dedicated file AND apply to running kernel
+- name: Persist and apply sysctl settings
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/99-kubernetes.conf
+    sysctl_set: true
+    reload: true
+    state: present
+  loop: "{{ sysctl_settings | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+
+# Swap: off now + permanently
+- name: Disable swap immediately
+  ansible.builtin.command: swapoff -a
+  when: ansible_swaptotal_mb | int > 0
+  changed_when: ansible_swaptotal_mb | int > 0
+
+- name: Remove swap entries from /etc/fstab (permanent)
+  ansible.posix.mount:
+    path: "{{ item.mount }}"
+    state: absent
+  loop: "{{ ansible_mounts | selectattr('fstype', 'equalto', 'swap') | list }}"
+  loop_control:
+    label: "{{ item.mount }}"
+
+- name: Comment any remaining swap lines in /etc/fstab
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^(\s*[^#\n]\S+\s+\S+\s+swap\s+.*)$'
+    replace: '# \1'

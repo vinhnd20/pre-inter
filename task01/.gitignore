@@ -1,0 +1,7 @@
+# Secrets — generated credentials never committed
+.secrets/
+*.pass
+.factcache/
+
+# Ansible
+*.retry

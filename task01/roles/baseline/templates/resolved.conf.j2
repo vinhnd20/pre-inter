@@ -1,0 +1,6 @@
+# Managed by Ansible
+[Resolve]
+DNS={{ dns_nameservers | join(' ') }}
+{% if dns_search_domains | length > 0 %}
+Domains={{ dns_search_domains | join(' ') }}
+{% endif %}

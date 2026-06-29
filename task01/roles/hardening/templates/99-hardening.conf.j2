@@ -1,0 +1,14 @@
+# Managed by Ansible — Kubernetes node SSH hardening (CIS L1 aligned)
+Protocol 2
+PermitRootLogin {{ ssh_permit_root_login }}
+PasswordAuthentication {{ ssh_password_authentication }}
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+MaxAuthTries {{ ssh_max_auth_tries }}
+X11Forwarding {{ ssh_x11_forwarding }}
+ClientAliveInterval {{ ssh_client_alive_interval }}
+ClientAliveCountMax {{ ssh_client_alive_count_max }}
+LoginGraceTime 60
+IgnoreRhosts yes
+HostbasedAuthentication no
+UsePAM yes

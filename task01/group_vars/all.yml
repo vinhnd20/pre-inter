@@ -1,0 +1,79 @@
+---
+# ============================================================================
+# Central configuration. Override per-host/group as needed. No hardcoding in
+# roles — everything tunable lives here.
+# ============================================================================
+
+# --- Versions (pin everything; one place to bump) -------------------------
+kubernetes_version: "1.30"          # minor track; drives apt repo + pause image
+kubernetes_pkg_version: "1.30.*"    # apt package version glob (held)
+containerd_version: ""              # "" = latest from Docker repo; or e.g. "1.7.*"
+crictl_runtime_endpoint: "unix:///run/containerd/containerd.sock"
+
+# --- Host identity ---------------------------------------------------------
+node_hostname: "{{ inventory_hostname }}"
+node_timezone: "UTC"
+# Extra static /etc/hosts entries (e.g. the control-plane API endpoint).
+hosts_entries:
+  - { ip: "127.0.1.1", names: "{{ node_hostname }}" }
+  # - { ip: "192.168.1.10", names: "k8s-api.internal k8s-api" }
+
+# --- DNS -------------------------------------------------------------------
+dns_nameservers:
+  - "1.1.1.1"
+  - "8.8.8.8"
+dns_search_domains: []
+
+# --- Sysadmin accounts -----------------------------------------------------
+# Passwords are auto-generated, stored locally (0600) on the controller, never
+# logged. ssh_authorized_keys strongly recommended so SSH hardening is safe.
+sysadmin_users:
+  - name: sysadmin
+    ssh_authorized_keys: []
+    # - "ssh-ed25519 AAAA... you@host"
+sysadmin_password_length: 24
+sysadmin_password_store: "{{ playbook_dir }}/.secrets/credentials.yml"
+sysadmin_force_password_reset: true
+
+# --- Common CLI tooling ----------------------------------------------------
+common_packages:
+  - curl
+  - wget
+  - vim
+  - jq
+  - htop
+  - tcpdump
+  - dnsutils
+  - lsof
+  - iproute2
+  - unzip
+  - ca-certificates
+  - gnupg
+  - apt-transport-https
+
+# --- Kubernetes node prerequisites ----------------------------------------
+kernel_modules:
+  - overlay
+  - br_netfilter
+
+sysctl_settings:
+  net.ipv4.ip_forward: "1"
+  net.bridge.bridge-nf-call-iptables: "1"
+  net.bridge.bridge-nf-call-ip6tables: "1"
+
+# --- containerd ------------------------------------------------------------
+containerd_pause_image: "registry.k8s.io/pause:3.9"   # must match kubeadm's expectation
+containerd_systemd_cgroup: true
+
+# --- SSH hardening ---------------------------------------------------------
+ssh_permit_root_login: "no"
+ssh_password_authentication: "no"   # set "yes" only if you have no keys yet
+ssh_max_auth_tries: 4
+ssh_x11_forwarding: "no"
+ssh_client_alive_interval: 300
+ssh_client_alive_count_max: 2
+
+# --- auditd ----------------------------------------------------------------
+audit_log_file: "/var/log/audit/audit.log"
+audit_max_log_file_mb: 50
+audit_num_logs: 8

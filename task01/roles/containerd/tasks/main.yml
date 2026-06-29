@@ -1,0 +1,81 @@
+---
+# ============================================================================
+# containerd via Docker apt repo (current & secure), configured for k8s:
+# SystemdCgroup=true (must match kubelet) + version-matched pause image.
+#
+# We generate the version-appropriate default config once, then patch the two
+# keys that matter. Patching (vs. templating the whole file) is robust across
+# containerd config schema changes and stays idempotent.
+# ============================================================================
+
+- name: Ensure keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add Docker apt GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}
+      signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
+    filename: docker
+    state: present
+
+- name: Install containerd.io
+  ansible.builtin.apt:
+    name: "containerd.io{{ ('=' + containerd_version) if containerd_version | length > 0 else '' }}"
+    state: present
+    update_cache: true
+
+- name: Hold containerd version (when pinned)
+  ansible.builtin.dpkg_selections:
+    name: containerd.io
+    selection: hold
+  when: containerd_version | length > 0
+
+- name: Ensure /etc/containerd exists
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: "0755"
+
+- name: Check whether containerd config already exists
+  ansible.builtin.stat:
+    path: /etc/containerd/config.toml
+  register: _containerd_cfg
+
+- name: Generate default containerd config (first run only)
+  ansible.builtin.shell: containerd config default > /etc/containerd/config.toml
+  args:
+    creates: /etc/containerd/config.toml
+  when: not _containerd_cfg.stat.exists
+  notify: Restart containerd
+
+- name: Enable SystemdCgroup
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: 'SystemdCgroup\s*=\s*false'
+    replace: 'SystemdCgroup = true'
+  when: containerd_systemd_cgroup | bool
+  notify: Restart containerd
+
+- name: Set version-matched pause image
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: '(sandbox_image\s*=\s*)"[^"]*"'
+    replace: '\1"{{ containerd_pause_image }}"'
+  notify: Restart containerd
+
+- name: Enable and start containerd
+  ansible.builtin.systemd_service:
+    name: containerd
+    enabled: true
+    state: started

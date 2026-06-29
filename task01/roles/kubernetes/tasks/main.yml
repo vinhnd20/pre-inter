@@ -1,0 +1,63 @@
+---
+# ============================================================================
+# kubelet + kubeadm (+ kubectl) + crictl from pkgs.k8s.io. Repo path is keyed
+# to the minor version. Packages are held so unattended upgrades can't bump
+# them out from under the cluster. kubelet is ENABLED but will not be active
+# until `kubeadm join` writes its config — this is expected pre-join.
+# ============================================================================
+
+- name: Ensure keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Add Kubernetes apt GPG key
+  ansible.builtin.get_url:
+    url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key"
+    dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+    mode: "0644"
+
+- name: Add Kubernetes apt repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc]
+      https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /
+    filename: kubernetes
+    state: present
+
+- name: Install Kubernetes components
+  ansible.builtin.apt:
+    name:
+      - "kubelet={{ kubernetes_pkg_version }}"
+      - "kubeadm={{ kubernetes_pkg_version }}"
+      - "kubectl={{ kubernetes_pkg_version }}"
+    state: present
+    update_cache: true
+    allow_change_held_packages: true
+
+- name: Hold Kubernetes packages
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+
+- name: Configure crictl runtime endpoint
+  ansible.builtin.copy:
+    dest: /etc/crictl.yaml
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      runtime-endpoint: {{ crictl_runtime_endpoint }}
+      image-endpoint: {{ crictl_runtime_endpoint }}
+      timeout: 10
+      debug: false
+
+- name: Enable kubelet (will activate after kubeadm join)
+  ansible.builtin.systemd_service:
+    name: kubelet
+    enabled: true

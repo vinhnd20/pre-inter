@@ -1,0 +1,110 @@
+---
+# ============================================================================
+# Selected CIS Ubuntu 24.04 Level 1 controls (documented set, not the full
+# benchmark). Each maps to a CIS section — see README.
+#   5.1.x  SSH server hardening
+#   5.3.x  Password policy (pam_pwquality + login.defs)
+#   1.1.x  Disable unused/uncommon filesystems
+#   5.4.x  Login banner + inactive account lock
+# ============================================================================
+
+# --- 5.1 SSH hardening -----------------------------------------------------
+- name: Drop-in SSH hardening config
+  ansible.builtin.template:
+    src: 99-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    owner: root
+    group: root
+    mode: "0600"
+    validate: "sshd -t -f %s"
+  notify: Restart sshd
+
+# --- 5.3 Password quality + ageing ----------------------------------------
+- name: Install password quality module
+  ansible.builtin.apt:
+    name: libpam-pwquality
+    state: present
+
+- name: Enforce password quality policy
+  ansible.builtin.copy:
+    dest: /etc/security/pwquality.conf.d/99-cis.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (CIS 5.3.1)
+      minlen = 14
+      minclass = 3
+      dcredit = -1
+      ucredit = -1
+      lcredit = -1
+      ocredit = -1
+      maxrepeat = 3
+
+- name: Set password ageing defaults (login.defs)
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: "^#?\\s*{{ item.key }}\\b"
+    line: "{{ item.key }}\t{{ item.value }}"
+    state: present
+  loop:
+    - { key: "PASS_MAX_DAYS", value: "365" }
+    - { key: "PASS_MIN_DAYS", value: "1" }
+    - { key: "PASS_WARN_AGE", value: "7" }
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Set default umask (CIS 5.4.4)
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: "^#?\\s*UMASK\\b"
+    line: "UMASK\t027"
+
+# --- 1.1 Disable uncommon filesystems -------------------------------------
+- name: Disable uncommon/unused filesystems
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/99-cis-blacklist.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (CIS 1.1.1)
+      install cramfs /bin/true
+      install freevxfs /bin/true
+      install jffs2 /bin/true
+      install hfs /bin/true
+      install hfsplus /bin/true
+      install squashfs /bin/true
+      install udf /bin/true
+
+# --- File permissions on critical files (CIS 6.1.x) -----------------------
+- name: Secure permissions on critical files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    owner: root
+    group: "{{ item.group | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/passwd, mode: "0644" }
+    - { path: /etc/group, mode: "0644" }
+    - { path: /etc/shadow, mode: "0640", group: shadow }
+    - { path: /etc/gshadow, mode: "0640", group: shadow }
+    - { path: /etc/ssh/sshd_config, mode: "0600" }
+  loop_control:
+    label: "{{ item.path }}"
+
+# --- 5.4 Login banner ------------------------------------------------------
+- name: Configure login warning banner
+  ansible.builtin.copy:
+    dest: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      ******************************************************************
+      Authorized access only. All activity is monitored and logged.
+      Disconnect immediately if you are not an authorized user.
+      ******************************************************************
+  loop:
+    - /etc/issue
+    - /etc/issue.net

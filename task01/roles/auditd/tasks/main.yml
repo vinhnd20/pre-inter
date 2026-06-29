@@ -1,0 +1,45 @@
+---
+# ============================================================================
+# auditd: capture every command executed by users into a dedicated log file.
+# execve auditing covers all binary executions; documented limitation is that
+# pure shell builtins (cd, export) do not invoke execve — see README.
+# ============================================================================
+
+- name: Install auditd
+  ansible.builtin.apt:
+    name:
+      - auditd
+      - audispd-plugins
+    state: present
+    update_cache: true
+
+- name: Configure auditd log location and rotation
+  ansible.builtin.lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: "^{{ item.key }}\\s*="
+    line: "{{ item.key }} = {{ item.value }}"
+    state: present
+  loop:
+    - { key: "log_file", value: "{{ audit_log_file }}" }
+    - { key: "max_log_file", value: "{{ audit_max_log_file_mb }}" }
+    - { key: "num_logs", value: "{{ audit_num_logs }}" }
+    - { key: "max_log_file_action", value: "ROTATE" }
+    - { key: "space_left_action", value: "SYSLOG" }
+  loop_control:
+    label: "{{ item.key }}"
+  notify: Restart auditd
+
+- name: Deploy user command audit rules
+  ansible.builtin.template:
+    src: k8s-node.rules.j2
+    dest: /etc/audit/rules.d/k8s-node.rules
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart auditd
+
+- name: Enable and start auditd
+  ansible.builtin.systemd_service:
+    name: auditd
+    enabled: true
+    state: started
