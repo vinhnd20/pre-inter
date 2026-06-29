@@ -62,7 +62,7 @@
     owner: root
     group: root
     mode: "0644"
-    content: >-
+    content: |
       {{ _containerd_default.stdout
          | regex_replace('SystemdCgroup\s*=\s*\w+',
                          'SystemdCgroup = true' if containerd_systemd_cgroup else 'SystemdCgroup = false')

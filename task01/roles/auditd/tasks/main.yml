@@ -38,6 +38,23 @@
     mode: "0640"
   notify: Restart auditd
 
+- name: Reload audit rules now
+  ansible.builtin.command: augenrules --load
+  changed_when: false
+  notify: Restart auditd
+
+- name: Enable TTY auditing for interactive sessions
+  ansible.builtin.lineinfile:
+    path: "{{ item }}"
+    regexp: '^session\s+required\s+pam_tty_audit\.so\b.*'
+    line: 'session required pam_tty_audit.so enable=*'
+    insertafter: '^session\s+'
+    state: present
+  loop:
+    - /etc/pam.d/common-session
+    - /etc/pam.d/common-session-noninteractive
+  notify: Restart auditd
+
 - name: Enable and start auditd
   ansible.builtin.systemd_service:
     name: auditd

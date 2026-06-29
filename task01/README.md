@@ -116,16 +116,15 @@ non-zero if any check fails**, naming what failed. Expected values are
 overridable via env vars to match `group_vars`.
 
 ### Audit logging — every user command
-`roles/auditd` installs auditd and loads execve rules keyed `user_commands`
-(for `auid>=1000`) and `root_commands`, writing to a dedicated log
-(`/var/log/audit/audit.log`) with rotation configured.
+`roles/auditd` installs auditd, loads `execve` rules keyed `user_commands`
+(for `auid>=1000`) and `root_commands`, and also enables `pam_tty_audit` for
+interactive sessions. That combination gives:
 
-> **Documented limitation:** auditd records the `execve` syscall, which covers
-> every binary a user runs. Pure shell **builtins** (`cd`, `export`, `alias`)
-> do not call `execve` and are therefore not captured by syscall auditing —
-> this is inherent to the approach, not a bug. If full keystroke/builtin
-> capture is required, layer `pam_tty_audit` or shell-level session logging on
-> top; that was judged out of scope for a node baseline.
+- syscall-level records for every binary execution
+- TTY/session capture for interactive commands, including shell builtins
+
+Everything is written to the dedicated audit log (`/var/log/audit/audit.log`)
+with rotation configured.
 
 ---
 
