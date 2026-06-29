@@ -47,31 +47,27 @@
     state: directory
     mode: "0755"
 
-- name: Check whether containerd config already exists
-  ansible.builtin.stat:
-    path: /etc/containerd/config.toml
-  register: _containerd_cfg
+- name: Generate default containerd configuration
+  # The containerd.io package ships a config.toml with `disabled_plugins =
+  # ["cri"]`, which breaks kubelet. We regenerate the full default (CRI
+  # enabled) every run and patch the two k8s-critical keys. `containerd config
+  # default` is deterministic, so the copy below stays idempotent.
+  ansible.builtin.command: containerd config default
+  register: _containerd_default
+  changed_when: false
 
-- name: Generate default containerd config (first run only)
-  ansible.builtin.shell: containerd config default > /etc/containerd/config.toml
-  args:
-    creates: /etc/containerd/config.toml
-  when: not _containerd_cfg.stat.exists
-  notify: Restart containerd
-
-- name: Enable SystemdCgroup
-  ansible.builtin.replace:
-    path: /etc/containerd/config.toml
-    regexp: 'SystemdCgroup\s*=\s*false'
-    replace: 'SystemdCgroup = true'
-  when: containerd_systemd_cgroup | bool
-  notify: Restart containerd
-
-- name: Set version-matched pause image
-  ansible.builtin.replace:
-    path: /etc/containerd/config.toml
-    regexp: '(sandbox_image\s*=\s*)"[^"]*"'
-    replace: '\1"{{ containerd_pause_image }}"'
+- name: Write production containerd config (CRI on, SystemdCgroup, pause image)
+  ansible.builtin.copy:
+    dest: /etc/containerd/config.toml
+    owner: root
+    group: root
+    mode: "0644"
+    content: >-
+      {{ _containerd_default.stdout
+         | regex_replace('SystemdCgroup\s*=\s*false',
+                         'SystemdCgroup = true' if containerd_systemd_cgroup else 'SystemdCgroup = false')
+         | regex_replace('sandbox_image\s*=\s*"[^"]*"',
+                         'sandbox_image = "' ~ containerd_pause_image ~ '"') }}
   notify: Restart containerd
 
 - name: Enable and start containerd
