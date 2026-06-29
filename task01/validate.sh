@@ -52,8 +52,10 @@ check "Sudoers syntax valid" "visudo -c"
 # --- Kernel prerequisites (the core requirement) ---------------------------
 section "Kernel Prerequisites"
 check "Swap disabled (none active)" "[ -z \"\$(swapon --noheadings)\" ] && echo ok" "ok"
-check "Module overlay loaded" "lsmod | awk '{print \$1}'" "overlay"
-check "Module br_netfilter loaded" "lsmod | awk '{print \$1}'" "br_netfilter"
+check "Module overlay loaded/built-in" \
+  "{ lsmod | grep -qw overlay || test -d /sys/module/overlay; } && echo ok" "ok"
+check "Module br_netfilter loaded/built-in" \
+  "{ lsmod | grep -qw br_netfilter || test -d /sys/module/br_netfilter; } && echo ok" "ok"
 check "sysctl net.ipv4.ip_forward = 1" \
   "cat /proc/sys/net/ipv4/ip_forward" "1"
 check "sysctl bridge-nf-call-iptables = 1" \
@@ -67,7 +69,7 @@ check "containerd service active" "systemctl is-active containerd" "active"
 check "containerd SystemdCgroup = true" \
   "containerd config dump | grep -i SystemdCgroup" "true"
 check "Pause image = ${PAUSE_IMAGE}" \
-  "containerd config dump | grep -i sandbox_image" "$PAUSE_IMAGE"
+  "containerd config dump | grep -iE 'sandbox_image|sandbox ='" "$PAUSE_IMAGE"
 
 # --- Kubernetes components -------------------------------------------------
 section "Kubernetes Components"

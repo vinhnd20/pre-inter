@@ -64,10 +64,12 @@
     mode: "0644"
     content: >-
       {{ _containerd_default.stdout
-         | regex_replace('SystemdCgroup\s*=\s*false',
+         | regex_replace('SystemdCgroup\s*=\s*\w+',
                          'SystemdCgroup = true' if containerd_systemd_cgroup else 'SystemdCgroup = false')
-         | regex_replace('sandbox_image\s*=\s*"[^"]*"',
-                         'sandbox_image = "' ~ containerd_pause_image ~ '"') }}
+         | regex_replace('sandbox_image\s*=\s*["\'][^"\']*["\']',
+                         'sandbox_image = "' ~ containerd_pause_image ~ '"')
+         | regex_replace('(\n\s*)sandbox\s*=\s*["\'][^"\']*["\']',
+                         '\1sandbox = "' ~ containerd_pause_image ~ '"') }}
   notify: Restart containerd
 
 - name: Enable and start containerd
