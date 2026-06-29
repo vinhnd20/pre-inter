@@ -11,6 +11,21 @@ Ansible automation that turns a fresh **Ubuntu 24.04 LTS** host into a
 
 ## Quick start
 
+### Option A — run on the node itself (fresh Ubuntu, via console)
+
+```bash
+# As root, from a clone on the target host:
+./bootstrap.sh          # installs ansible+git, collections, writes local inventory
+# then:
+ansible-playbook -i inventory/local.ini site.yml
+./validate.sh
+
+# ...or do it all in one shot:
+./bootstrap.sh --run
+```
+
+### Option B — run from a controller against remote node(s)
+
 ```bash
 # 1. Install collection dependencies
 ansible-galaxy collection install -r requirements.yml
@@ -27,8 +42,8 @@ sudo ./validate.sh
 ```
 
 Generated sysadmin passwords are written to `.secrets/credentials.yml` on the
-**controller** (mode `0600`, git-ignored). Users are forced to change them on
-first login.
+**machine that runs Ansible** (mode `0600`, git-ignored) — for Option A that is
+the node itself. Users are forced to change them on first login.
 
 ---
 
