@@ -81,10 +81,12 @@ check "crictl endpoint configured" \
 
 # --- Security --------------------------------------------------------------
 section "Security"
-check "SSH PermitRootLogin no" "sshd -T 2>/dev/null | grep permitrootlogin" "no"
-check "SSH PasswordAuthentication" "sshd -T 2>/dev/null | grep -E '^passwordauthentication'"
+check "SSH PermitRootLogin no" "sshd -T 2>/dev/null | grep -E '^permitrootlogin' | awk '{print \$2}'" "no"
+check "SSH PasswordAuthentication no" "sshd -T 2>/dev/null | grep -E '^passwordauthentication' | awk '{print \$2}'" "no"
+check "SSH X11Forwarding no" "sshd -T 2>/dev/null | grep -E '^x11forwarding' | awk '{print \$2}'" "no"
 check "auditd service active" "systemctl is-active auditd" "active"
 check "Audit rule for user commands loaded" "auditctl -l" "user_commands"
+check "TTY auditing enabled in PAM" "grep -R '^session required pam_tty_audit\\.so enable=\\*' /etc/pam.d/common-session /etc/pam.d/common-session-noninteractive"
 check "Audit log file present" "test -f ${AUDIT_LOG} && echo ok" "ok"
 
 # --- Result ----------------------------------------------------------------

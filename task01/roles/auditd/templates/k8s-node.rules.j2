@@ -3,6 +3,7 @@
 
 # Record all command executions (execve) for real users and root.
 # auid!=unset filters kernel/boot noise; >=1000 = human/login users.
+# Limitation: syscall audit catches binaries, not shell builtins like cd/export.
 -a always,exit -F arch=b64 -S execve -F auid>=1000 -F auid!=4294967295 -k user_commands
 -a always,exit -F arch=b32 -S execve -F auid>=1000 -F auid!=4294967295 -k user_commands
 
