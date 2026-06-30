@@ -3,12 +3,12 @@
 # Idempotent sysadmin provisioning.
 #
 # Passwords are generated ONCE via the `password` lookup (persisted to a
-# per-user file on the controller) so re-runs do NOT churn the password — this
-# is the key to idempotency. Plaintext never hits stdout or the target's logs
-# (no_log on every task that touches it).
+# per-user file on the machine running Ansible) so re-runs do NOT churn the
+# password. Plaintext never hits stdout or the target's logs (no_log on every
+# task that touches it).
 # ============================================================================
 
-- name: Ensure local secrets directory exists (controller)
+- name: Ensure local secrets directory exists
   ansible.builtin.file:
     path: "{{ sysadmin_password_store | dirname }}"
     state: directory
@@ -74,7 +74,7 @@
   register: users_chage
   changed_when: false   # advisory; chage is not cleanly idempotent-reportable
 
-- name: Persist generated credentials to controller (0600, never logged)
+- name: Persist generated credentials locally (0600, never logged)
   ansible.builtin.copy:
     dest: "{{ sysadmin_password_store }}"
     mode: "0600"

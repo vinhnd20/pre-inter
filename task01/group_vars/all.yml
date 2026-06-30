@@ -25,8 +25,9 @@ dns_nameservers:
 dns_search_domains: []
 
 # --- Sysadmin accounts -----------------------------------------------------
-# Passwords are auto-generated, stored locally (0600) on the controller, never
-# logged. ssh_authorized_keys strongly recommended so SSH hardening is safe.
+# Passwords are auto-generated, stored locally (0600) on the machine running
+# Ansible, never logged. ssh_authorized_keys strongly recommended so SSH
+# hardening is safe.
 sysadmin_users:
   - name: sysadmin
     ssh_authorized_keys: []

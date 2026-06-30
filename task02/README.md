@@ -1,150 +1,93 @@
-# Task 02 — Centralized Log Management Design
+# Task 02 - Centralized Log Management Design
 
-This folder contains the architecture diagram for a centralized log management
-system sized for roughly **1,000–2,000 endpoints**.
+This document describes a centralized log management system for **1,000-2,000
+endpoints**, including servers, network devices, and applications.
 
 ## Deliverable
 
-- [PNG architecture diagram](images/log-management-architecture.png)
+![Log management architecture](images/log-management-architecture.png)
 
-## What the design shows
+## 1. Collection and Transport Architecture
 
-The three source classes the assignment calls out — **servers, network
-devices, and applications** — each have a distinct collection path because they
-cannot all run an agent:
+The ingestion path is split by source type because not every endpoint can run an
+agent. All paths converge at the Vector aggregation tier.
 
-| Source class | How logs are collected | Transport into the pipeline |
-|--------------|------------------------|-----------------------------|
-| **Kubernetes / containerized apps** | Node-level Vector **DaemonSet** tails container stdout/stderr and reads pod metadata | → Vector aggregation |
-| **VM / bare-metal servers** | Local **Vector agent** (or `journald`/file source) | → Vector aggregation |
-| **Network devices** (switches, routers, firewalls) | **Cannot run an agent** — they emit **syslog (UDP/TCP 514)**, and metrics via SNMP. A dedicated Vector **`syslog` source** acts as the collector | → Vector aggregation |
-| **Applications** | Structured logs (JSON) via stdout, file, or direct HTTP/`vector` sink | → Vector aggregation |
+| Source class            | Collection mechanism                                                                                  | Transport into pipeline |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------- |
+| Kubernetes / containers | Node-level Vector DaemonSet tails container stdout/stderr and enriches pod metadata                   | Vector aggregation LB   |
+| VM / bare-metal servers | Local Vector agent tails `journald` and local log files such as `/var/log/*.log`                      | Vector aggregation LB   |
+| Network devices         | Agentless syslog from switches, routers, and firewalls over UDP/TCP 514 into a Vector syslog listener | Vector aggregation LB   |
+| Applications            | Structured JSON logs via stdout, files, or direct HTTP/Vector sink                                    | Vector aggregation LB   |
 
-From there the flow is uniform:
 
-- Agents and the syslog collector forward to a **central Vector aggregation
-  layer** (run as ≥2 instances behind a load balancer — see *Availability*).
-- The aggregation layer forwards streams into **Kafka** for durable buffering
-  and decoupling (producers and consumers fail independently).
-- A downstream **Vector consumer** reads from Kafka and delivers normalized logs
-  to **Loki** for search and alerting.
-- **Grafana** reads from Loki and handles visualization and alerting workflows.
-- **Object storage (S3)** is used for archival offload.
+The Vector aggregation layer runs as **2 or more instances behind a load
+balancer**. Edge agents buffer locally if the aggregation tier is temporarily
+unreachable. Aggregators write to Kafka so ingestion is decoupled from storage;
+Kafka absorbs spikes such as firewall log storms and allows Loki maintenance
+without dropping logs.
 
-Network devices are treated as a first-class source, not an afterthought: a
-dedicated syslog ingestion tier means a misbehaving device (e.g. a firewall
-log storm) is buffered by Kafka instead of overwhelming storage.
+## 2. Parsing, Normalization, and Enrichment
 
-### Parsing, normalization, enrichment
+Vector performs processing before logs enter durable storage.
 
-- Parsing happens close to the source in Vector so logs are structured early.
-- Normalization and enrichment also happen in Vector aggregation:
-  - parse application, system, and platform-specific formats
-  - enrich with host, environment, cluster, and service metadata
-  - mask or drop sensitive fields before storage
+- **Parsing at the edge:** Vector agents parse JSON, syslog, container logs,
+  `journald`, and common application/system formats close to the source.
+- **Normalization at aggregation:** central Vector aggregators normalize
+  timestamps to UTC, map log levels into a common schema, and standardize field
+  names such as `host`, `service`, `environment`, `cluster`, and `severity`.
+- **Enrichment:** records are enriched with host metadata, Kubernetes pod labels,
+  service name, environment, cluster, and device metadata for network sources.
+- **Redaction:** passwords, tokens, and PII are masked or dropped before logs
+  reach Kafka, Loki, or S3.
 
-### Storage, retention, archival
+This keeps the storage layer clean and makes queries predictable across
+different log sources.
 
-- Loki is the hot searchable store for recent logs and operational queries.
-- Kafka provides short-term resilience and backpressure handling, not long-term
-  retention.
-- Retention can be designed in one of two ways:
-  - **Hot-search model**: keep logs in Loki for **90 days** when operators need
-    frequent access to historical data and can accept higher storage cost.
-  - **Archive model**: keep Loki retention shorter, then send a copy of raw logs
-    to a separate S3 archive bucket for compliance and long-term audit needs.
-- In practice, the archive model is usually better for compliance because it
-  keeps Loki fast while preserving a second, cheaper retention tier.
-- If a separate archive tier is used, the hot tier and archive tier should have
-  different retention policies:
-  - hot search in Loki for **90 days**
-  - archive bucket for **365 days**
-  - delete according to compliance and cost needs
+## 3. Storage, Retention, and Archival Policy
 
-## Technology choices and tradeoffs
+This design uses a split-tier model instead of one large datastore.
 
-The stack is a deliberate set of tradeoffs, not a default:
+- **Kafka buffer:** keeps logs for **24 hours to 7 days**. It is the
+  backpressure and replay layer, not the long-term system of record.
+- **Loki hot tier:** stores recent searchable logs for **90 days**. Loki runs in
+  distributed mode with separate distributors, ingesters, and queriers, using S3
+  as the chunk backend.
+- **S3 archive tier:** stores compressed raw logs for **365 days** with lifecycle
+  policies for deletion or transition to colder storage.
 
-- **Vector** (collection/aggregation) over Fluentd/Logstash: lower memory
-  footprint per agent, a single binary for both edge and aggregation roles, and
-  built-in transforms (parse/enrich/redact) so we don't need a separate
-  processing tier.
-- **Kafka** as the buffer over a direct agent→storage path: it decouples
-  producers from consumers, absorbs spikes, and becomes the durability boundary
-  that lets storage be restarted or replaced without losing logs.
-- **Loki** over Elasticsearch/OpenSearch: Loki indexes only labels (not full
-  text), so it is **much cheaper to run and operate** at this scale and pairs
-  naturally with cheap object storage. The accepted tradeoff is **weaker
-  full-text search and a sensitivity to high label cardinality** — for an
-  operational/troubleshooting workload (filter by service/host/level, then grep
-  within a stream) this is the right balance. If the requirement were heavy
-  ad-hoc full-text analytics or security/SIEM-grade search, OpenSearch would be
-  the better fit and the design would swap the storage tier while keeping the
-  Vector→Kafka front end unchanged.
+This keeps operational queries fast while keeping long-term retention cheaper.
 
-## Why this design fits the size
+## 4. Technology Choices and Tradeoffs
 
-- Vector is lightweight enough for 1,000–2,000 endpoints.
-- Kafka absorbs spikes and protects downstream storage from overload.
-- Loki keeps search simple for operators while object storage keeps costs down.
-- The split between edge collection and central aggregation avoids direct fan-in
-  from every source to storage.
-- The architecture scales because the hot path and archive path can be tuned
-  independently.
+- **Vector over Fluentd/Logstash:** lower memory footprint per agent, one binary
+  for edge and aggregation roles, high throughput, and built-in parsing,
+  enrichment, and redaction.
+- **Kafka over direct agent-to-storage:** Kafka decouples producers from
+  consumers, absorbs bursts, and provides a durability boundary when Loki or the
+  archive path is unavailable.
+- **Loki over OpenSearch/Elasticsearch:** Loki indexes labels instead of full
+  log text, so it is cheaper to run at this scale and works naturally with
+  object storage.
+- **Tradeoff:** Loki is weaker for ad-hoc full-text analytics. For operational
+  troubleshooting, filtering by labels such as service, host, environment, and
+  severity before searching within streams is the right cost/performance trade.
+  If the requirement becomes SIEM-grade search, the storage tier can be swapped
+  to OpenSearch while keeping the Vector -> Kafka ingestion path.
 
-## Capacity assumptions (ballpark)
+## 5. Capacity and Availability Assumptions
 
-Sizing should be confirmed against measured ingest, but the design is anchored
-to a working estimate so the component counts are defensible:
+Sizing should be validated with real traffic, but the initial design assumes:
 
-- **1,000–2,000 endpoints**, assume an average of ~5 GB/day each at the high end
-  → **~5–10 TB/day** raw, on the order of **100k–200k events/sec** at peak.
-- **Kafka**: 3-broker cluster, replication factor 3, topic partitioned (e.g. 12+
-  partitions) so the Vector consumers can scale horizontally. 1–7 day retention
-  is the buffer, not the system of record.
-- **Loki**: run distributed (separate ingester/querier/distributor) rather than
-  single-binary at this scale; object storage (S3) as the chunk backend.
-- **Vector aggregation**: start with 2–3 instances, scale on CPU/throughput.
+- **Scale:** 1,000-2,000 endpoints.
+- **Ingest estimate:** up to ~5 GB/day per endpoint at the high end, or about
+  **5-10 TB/day raw** and **100k-200k events/sec** at peak.
+- **Kafka:** 3 brokers, replication factor 3, and 12 or more partitions so
+  Vector consumers can scale horizontally.
+- **Vector aggregation:** start with 2-3 instances behind a load balancer and
+  scale based on CPU, network, and Kafka producer lag.
+- **Loki:** distributed deployment with replicated ingesters and S3-backed
+  chunks.
 
-These are starting points; the real numbers come from a short measurement
-period before go-live.
-
-## Availability
-
-No tier is a single point of failure:
-
-- **Vector aggregation** runs as **≥2 instances behind a load balancer**. Agents
-  and the syslog collector point at the LB endpoint, so losing one instance does
-  not drop ingestion.
-- **Kafka** is a 3-broker cluster with replication factor 3 — it tolerates a
-  broker loss and is the durability boundary: if Loki is down, logs accumulate
-  in Kafka and are replayed when it recovers (no data loss within retention).
-- **Loki** runs distributed with replicated ingesters; S3 provides durable
-  chunk/long-term storage.
-- **Agents** buffer to local disk when the aggregation layer is briefly
-  unreachable, so short outages do not lose logs at the edge.
-
-## Concrete retention policy
-
-For this design, the recommended defaults are:
-
-- Kafka retention: **24 hours to 7 days**
-- Loki retention: **90 days**
-- S3 archive bucket retention: **365 days**
-
-This keeps the hot path fast while preserving a full year of raw logs for audit
-and compliance review.
-
-## Security and operational notes
-
-- **In transit**: TLS on every hop — agents→aggregation, aggregation→Kafka
-  (SASL/TLS), Kafka→Loki, and Grafana access behind SSO. Network-device syslog
-  is plaintext by default, so terminate it on a hardened collector inside the
-  management network rather than exposing 514 broadly.
-- **At rest**: encrypt the S3 archive bucket; apply a bucket lifecycle policy
-  matching the retention table; restrict access via IAM.
-- **PII**: redaction/drop happens in Vector aggregation *before* Kafka and
-  storage, so sensitive fields never land in the durable tiers.
-- The diagram is intentionally technology-specific, but the pattern
-  (edge collect → buffer → normalize → hot store + archive) is portable to other
-  stacks (Fluent Bit / Kafka / OpenSearch, etc.).
+No tier should be a single point of failure. Edge agents buffer locally,
+aggregation runs behind a load balancer, Kafka is replicated, and Loki uses
+distributed components with object storage for durable chunks.
